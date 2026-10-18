@@ -1,0 +1,5 @@
+all:
+  hosts:
+    debian-web:
+      ansible_host: default
+      ansible_ssh_common_args: '-F /home/zozo/ansible-projects/ansible-project/vagrant_ssh_config'

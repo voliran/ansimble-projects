@@ -1,0 +1,38 @@
+---
+- name: Скачать и распаковать WordPress
+  unarchive:
+    src: "https://wordpress.org/wordpress-{{ wp_version }}.tar.gz"
+    dest: /var/www/html/
+    remote_src: yes
+
+- name: Создать wp-config.php из шаблона
+  template:
+    src: wp-config.php.j2
+    dest: "{{ wp_dir }}/wp-config.php"
+    owner: www-data
+    group: www-data
+    mode: '0644'
+
+- name: Заменить дефолтный конфиг Apache на конфиг WordPress
+  template:
+    src: wordpress.conf.j2
+    dest: /etc/apache2/sites-available/wordpress.conf
+  notify: restart apache
+
+- name: Включить сайт WordPress
+  command: a2ensite wordpress.conf
+  args:
+    creates: /etc/apache2/sites-enabled/wordpress.conf
+  notify: restart apache
+
+- name: Отключить дефолтный сайт Apache
+  command: a2dissite 000-default.conf
+  notify: restart apache
+
+- name: Выдать права на папку WordPress
+  file:
+    path: "{{ wp_dir }}"
+    owner: www-data
+    group: www-data
+    recurse: yes
+    state: directory

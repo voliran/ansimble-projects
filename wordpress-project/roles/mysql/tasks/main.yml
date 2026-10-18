@@ -1,0 +1,30 @@
+---
+- name: Установить MariaDB (MySQL)
+  apt:
+    name: mariadb-server
+    state: present
+
+- name: Запустить MariaDB
+  service:
+    name: mariadb
+    state: started
+    enabled: yes
+
+- name: Установить Python модуль для работы с БД
+  apt:
+    name: python3-pymysql
+    state: present
+
+- name: Создать базу данных
+  mysql_db:
+    name: "{{ db_name }}"
+    state: present
+    login_unix_socket: /var/run/mysqld/mysqld.sock
+
+- name: Создать пользователя БД
+  mysql_user:
+    name: "{{ db_user }}"
+    password: "{{ db_password }}"
+    priv: "{{ db_name }}.*:ALL"
+    state: present
+    login_unix_socket: /var/run/mysqld/mysqld.sock

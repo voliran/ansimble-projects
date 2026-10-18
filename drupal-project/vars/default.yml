@@ -1,0 +1,51 @@
+---
+# --- Drupal settings ---
+drupal_dir: "/var/www/drupal"
+drupal_web_dir: "/var/www/drupal/web"
+drupal_db_name: "drupal"
+drupal_db_user: "drupal"
+drupal_db_password: "drupal"
+drupal_db_host: "127.0.0.1"
+drupal_site_name: "My Drupal Site"
+drupal_account_name: admin
+drupal_account_pass: "AdminPass123!"
+
+# --- PHP settings ---
+php_pgsql_package: "php8.1-pgsql"
+__php_pgsql_package: "php8.1-pgsql"
+php_enable_php_fpm: true
+php_enable_webserver: false 
+php_fpm_pool_user: www-data
+php_fpm_pool_group: www-data
+
+# --- PostgreSQL settings ---
+postgresql_databases:
+  - name: "{{ drupal_db_name }}"
+    owner: "{{ drupal_db_user }}"
+postgresql_users:
+  - name: "{{ drupal_db_user }}"
+    password: "{{ drupal_db_password }}"
+    priv: "ALL"
+
+# --- NGINX settings ---
+nginx_remove_default_vhost: true
+nginx_vhosts:
+  - listen: "80 default_server"
+    server_name: "_"
+    root: "{{ drupal_web_dir }}"
+    index: "index.php index.html"
+    state: present
+    filename: "drupal.conf"
+    extra_parameters: |
+      location ~ \.php$ {
+          fastcgi_split_path_info ^(.+?\.php)(/.*)$;
+          try_files $fastcgi_script_name =404;
+          set $path_info $fastcgi_path_info;
+          fastcgi_param PATH_INFO $path_info;
+          include /etc/nginx/fastcgi_params;
+          fastcgi_param SCRIPT_FILENAME $document_root$fastcgi_script_name;
+          fastcgi_pass 127.0.0.1:9000;
+      }
+      location / {
+          try_files $uri $uri/ /index.php?$query_string;
+      }

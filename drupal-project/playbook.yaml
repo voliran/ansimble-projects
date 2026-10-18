@@ -1,0 +1,108 @@
+---
+- name: Развёртывание Drupal на LEPP-стеке (NGINX + PostgreSQL + PHP)
+  hosts: all
+  become: true
+  vars_files:
+    - vars/default.yml
+
+  pre_tasks:
+    - name: Установить пакет acl для работы become_user
+      apt:
+        name: acl
+        state: present
+        update_cache: yes
+
+    - name: Создать директорию для временных файлов Ansible (www-data)
+      file:
+        path: /tmp/ansible-www-data
+        state: directory
+        owner: www-data
+        group: www-data
+        mode: '0700'
+
+  roles:
+    - geerlingguy.nginx
+    - geerlingguy.postgresql
+    - geerlingguy.php
+    - geerlingguy.php-pgsql
+    - geerlingguy.composer
+
+  post_tasks:
+    - name: Установить git и unzip для Composer
+      apt:
+        name: [git, unzip, wget]
+        state: present
+
+    - name: Создать директорию для Drupal
+      file:
+        path: "{{ drupal_dir }}"
+        state: directory
+        owner: www-data
+        group: www-data
+        mode: '0755'
+
+    - name: Проверить, установлен ли уже Drupal
+      stat:
+        path: "{{ drupal_web_dir }}/index.php"
+      register: drupal_composer_stat
+
+    - name: Скачать и распаковать Drupal с зеркала ftp.drupal.org
+      become_user: www-data
+      shell: |
+        wget -q --tries=10 --timeout=600 -O /tmp/drupal.tar.gz https://ftp.drupal.org/files/projects/drupal-10.6.19.tar.gz
+        mkdir -p {{ drupal_web_dir }}
+        tar -xzf /tmp/drupal.tar.gz -C {{ drupal_web_dir }} --strip-components=1
+        rm /tmp/drupal.tar.gz
+      environment:
+        ANSIBLE_REMOTE_TMP: "/tmp/ansible-www-data"
+      when: not drupal_composer_stat.stat.exists
+
+    - name: Добавить Drush в проект через Composer (локально)
+      become_user: www-data
+      composer:
+        command: require
+        arguments: "drush/drush --no-interaction"
+        working_dir: "{{ drupal_web_dir }}"
+      environment:
+        ANSIBLE_REMOTE_TMP: "/tmp/ansible-www-data"
+        COMPOSER_PROCESS_TIMEOUT: "3000"
+      when: not drupal_composer_stat.stat.exists
+
+    # -----------------------------------------
+
+    - name: Проверить наличие бинарника Drush
+      stat:
+        path: "{{ drupal_web_dir }}/vendor/bin/drush"
+      register: drush_bin
+
+    - name: Установить сайт Drupal через локальный Drush
+      become_user: www-data
+      command: >
+        ./vendor/bin/drush site:install standard
+        --db-url=pgsql://{{ drupal_db_user }}:{{ drupal_db_password }}@{{ drupal_db_host }}/{{ drupal_db_name }}
+        --account-name={{ drupal_account_name }}
+        --account-pass={{ drupal_account_pass }}
+        --site-name="{{ drupal_site_name }}"
+        -y
+      args:
+        chdir: "{{ drupal_web_dir }}"
+        creates: "{{ drupal_web_dir }}/sites/default/settings.php"
+      environment:
+        ANSIBLE_REMOTE_TMP: "/tmp/ansible-www-data"
+      when: drush_bin.stat.exists
+
+    - name: Выставить права на файлы Drupal
+      file:
+        path: "{{ drupal_dir }}"
+        owner: www-data
+        group: www-data
+        recurse: true
+        state: directory
+
+    - name: Перезапустить PHP-FPM и NGINX
+      service:
+        name: "{{ item }}"
+        state: restarted
+      loop:
+        - php8.1-fpm
+        - nginx
